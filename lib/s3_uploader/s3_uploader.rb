@@ -14,6 +14,7 @@ module S3Uploader
 
   class Uploader
     attr_writer :logger
+    attr_accessor :file_in_error
 
     def initialize(options = {})
 
@@ -130,20 +131,28 @@ module S3Uploader
             end
             file = files.pop rescue nil
             if file
-              key = file.sub(source, '').sub(gzip_working_dir.to_s, '')
-              dest = [ @options[:destination_dir], key ].join
-              body = File.open(file)
-              @logger.info(["[", Thread.current["file_number"], "/",
-                            total_files, "] Uploading ", key,
-                            " to s3://#{bucket}/#{dest}" ].join)
+              begin
+                key = file.sub(source, '').sub(gzip_working_dir.to_s, '')
+                dest = [ @options[:destination_dir], key ].join
+                body = File.open(file)
+                @logger.info(["[", Thread.current["file_number"], "/",
+                              total_files, "] Uploading ", key,
+                              " to s3://#{bucket}/#{dest}" ].join)
 
-              directory.files.create(
-                :key    => dest,
-                :body   => body,
-                :public => @options[:public],
-                :metadata => @options[:metadata]
-              )
-              body.close
+                directory.files.create(
+                  :key    => dest,
+                  :body   => body,
+                  :public => @options[:public],
+                  :metadata => @options[:metadata]
+                )
+                body.close
+              rescue StandardError => e
+                @mutex.synchronize do
+                  @file_in_error = file
+                end
+
+                raise e
+              end
             end
           end
         end
